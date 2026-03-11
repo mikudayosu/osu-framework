@@ -969,9 +969,11 @@ namespace osu.Framework.Graphics.UserInterface
                 drawable.Show();
                 drawableCreationParameters?.Invoke(drawable);
 
-                text = text.Insert(selectionLeft, c.ToString());
+                int insertIndex = Math.Clamp(selectionLeft, 0, text.Length);
 
-                selectionStart = selectionEnd = selectionLeft + 1;
+                text = text.Insert(insertIndex, c.ToString());
+
+                selectionStart = selectionEnd = insertIndex + 1;
                 ignoreOngoingDragSelection = true;
 
                 cursorAndLayout.Invalidate();
@@ -1735,7 +1737,9 @@ namespace osu.Framework.Graphics.UserInterface
                 NotifyInputError();
             }
 
-            string oldComposition = text.Substring(imeCompositionStart, imeCompositionLength);
+            int safeStart = Math.Clamp(imeCompositionStart, 0, text.Length);
+            int safeCompositionLength = Math.Clamp(imeCompositionLength, 0, text.Length - safeStart);
+            string oldComposition = text.Substring(safeStart, safeCompositionLength);
 
             matchBeginningEnd(oldComposition, newComposition, out int matchBeginning, out int matchEnd);
 
@@ -1801,7 +1805,7 @@ namespace osu.Framework.Graphics.UserInterface
                 // move the cursor to end of finalized composition.
                 selectionStart = selectionEnd = imeCompositionStart + imeCompositionLength;
 
-                if (userEvent) OnImeResult(text.Substring(imeCompositionStart, imeCompositionLength), successful);
+                if (userEvent) OnImeResult(text.Substring(imeCompositionStart, Math.Clamp(imeCompositionLength, 0, text.Length - imeCompositionStart)), successful);
             }
 
             imeCompositionDrawables.Clear();

@@ -512,7 +512,9 @@ namespace osu.Framework.Platform.SDL3
         {
             string? text = evtEdit.GetText();
             Debug.Assert(text != null);
-            TextEditing?.Invoke(text, evtEdit.start, evtEdit.length);
+            int start = Math.Max(0, evtEdit.start);
+            int length = Math.Max(0, evtEdit.length);
+            TextEditing?.Invoke(text, start, length);
         }
 
         private void handleKeyboardEvent(SDL_KeyboardEvent evtKey)
