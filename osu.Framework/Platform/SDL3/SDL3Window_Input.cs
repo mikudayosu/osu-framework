@@ -504,6 +504,7 @@ namespace osu.Framework.Platform.SDL3
         private void handleTextInputEvent(SDL_TextInputEvent evtText)
         {
             string? text = evtText.GetText();
+            Logger.Log($"[IME] TextInput: text='{text}'");
             Debug.Assert(text != null);
             TextInput?.Invoke(text);
         }
@@ -512,6 +513,13 @@ namespace osu.Framework.Platform.SDL3
         {
             string? text = evtEdit.GetText();
             Debug.Assert(text != null);
+            if (string.IsNullOrEmpty(text))
+            {
+                Logger.Log($"[IME] Empty TextEditing received");
+                TextInputFinished?.Invoke();
+                // TextInput?.Invoke(string.Empty);
+            }
+            Logger.Log($"[IME] TextEditing: text='{text}' start={evtEdit.start} length={evtEdit.length}");
             int start = Math.Max(0, evtEdit.start);
             int length = Math.Max(0, evtEdit.length);
             TextEditing?.Invoke(text, start, length);
@@ -766,11 +774,17 @@ namespace osu.Framework.Platform.SDL3
         /// Invoked when the user enters text.
         /// </summary>
         public event Action<string>? TextInput;
-
+        
         /// <summary>
         /// Invoked when an IME text editing event occurs.
         /// </summary>
         public event TextEditingDelegate? TextEditing;
+
+        /// <summary>
+        /// Invoked when the IME composition is committed, before the next composition begins.
+        /// Used to ensure pending text input is flushed before processing the next composition event.
+        /// </summary>
+        public event Action? TextInputFinished;
 
         /// <inheritdoc cref="IWindow.KeymapChanged"/>
         public event Action? KeymapChanged;

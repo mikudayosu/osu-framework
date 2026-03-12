@@ -25,6 +25,7 @@ using osu.Framework.Input.Events;
 using osu.Framework.Localisation;
 using osu.Framework.Platform;
 using osu.Framework.Threading;
+using osu.Framework.Logging;
 using osuTK;
 using osuTK.Input;
 
@@ -1503,6 +1504,7 @@ namespace osu.Framework.Graphics.UserInterface
                 textInput.Activate(InputProperties, ScreenSpaceDrawQuad.AABBFloat);
 
             textInput.OnTextInput += handleTextInput;
+            textInput.OnTextInputFinished += handleTextInputFinished;
             textInput.OnImeComposition += handleImeComposition;
             textInput.OnImeResult += handleImeResult;
 
@@ -1523,6 +1525,7 @@ namespace osu.Framework.Graphics.UserInterface
                     textInput.Deactivate();
 
                 textInput.OnTextInput -= handleTextInput;
+                textInput.OnTextInputFinished -= handleTextInputFinished;
                 textInput.OnImeComposition -= handleImeComposition;
                 textInput.OnImeResult -= handleImeResult;
             }
@@ -1531,18 +1534,25 @@ namespace osu.Framework.Graphics.UserInterface
             textInputBlocking = false;
         }
 
+        private bool cancelNextTextInput;
+
         private void handleTextInput(string text) => textInputScheduler.Add(t =>
         {
+            if (cancelNextTextInput)
+            {
+                cancelNextTextInput = false;
+                return;
+            }
             textInputBlocking = true;
-
             InsertString(t);
             OnUserTextAdded(t);
-
-            // clear the flag in the next frame if no buttons are pressed/held.
-            // needed in case a text event happens without an associated button press (and release).
-            // this could be the case for software keyboards, for instance.
             Scheduler.AddOnce(revertBlockingStateIfRequired);
         }, text);
+
+        private void handleTextInputFinished()
+        {
+            textInputScheduler.Update();
+        }
 
         /// <summary>
         /// Reverts the <see cref="textInputBlocking"/> flag to <c>false</c> if no keys are pressed.
@@ -1684,6 +1694,7 @@ namespace osu.Framework.Graphics.UserInterface
         /// </remarks>
         private void onImeComposition(string newComposition, int newSelectionStart, int newSelectionLength, bool userEvent)
         {
+            Logger.Log($"[IME] onImeComposition: new='{newComposition}' selStart={newSelectionStart} selLen={newSelectionLength} imeStart={imeCompositionStart} imeLen={imeCompositionLength}");
             if (Current.Disabled)
             {
                 // don't raise error if composition text is empty, as the empty event could be generated indirectly,
@@ -1702,6 +1713,21 @@ namespace osu.Framework.Graphics.UserInterface
             // used for tracking the selection to report for `OnImeComposition()`
             int oldStart = selectionStart;
             int oldEnd = selectionEnd;
+
+            // KDE/fcitx5: empty composition with active imeLen means commit is done,
+            // reset composition state so next composition starts at correct position.
+            if (string.IsNullOrEmpty(newComposition) && imeCompositionLength > 0)
+            {
+                Logger.Log($"[IME] Clearing composition drawables (imeLen={imeCompositionLength})");
+                cancelNextTextInput = true;
+                foreach (var d in imeCompositionDrawables)
+                    d.Alpha = 1f;
+                selectionStart = selectionEnd = imeCompositionStart + imeCompositionLength;
+                imeCompositionDrawables.Clear();
+                imeCompositionStart = selectionLeft;
+                updateImeWindowPosition();
+                return;
+            }
 
             if (imeCompositionLength == 0)
             {

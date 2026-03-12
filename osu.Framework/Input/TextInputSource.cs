@@ -104,6 +104,12 @@ namespace osu.Framework.Input
         public event Action<string>? OnTextInput;
 
         /// <summary>
+        /// Invoked when a pending text input has been committed by the IME,
+        /// signalling that any queued input should be flushed before the next composition begins.
+        /// </summary>
+        public event Action? OnTextInputFinished;
+
+        /// <summary>
         /// Invoked when IME composition starts or changes.
         /// </summary>
         /// <remarks>Empty string for text means that the composition has been cancelled.</remarks>
@@ -148,6 +154,8 @@ namespace osu.Framework.Input
         {
             OnTextInput?.Invoke(text);
         }
+
+        protected void TriggerTextInputFinished() => OnTextInputFinished?.Invoke();
 
         protected void TriggerImeComposition(string text, int start, int length)
         {

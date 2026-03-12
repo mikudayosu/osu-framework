@@ -1,14 +1,20 @@
 ﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System;
 using osu.Framework.Graphics.Primitives;
 using osu.Framework.Platform;
+using osu.Framework.Logging;
 
 namespace osu.Framework.Input
 {
     internal class SDLWindowTextInput : TextInputSource
     {
         private readonly ISDLWindow window;
+
+        private Action? pendingTextInput;
+        private bool hadActiveComposition;
+        private bool pendingEmptyEditing;
 
         public SDLWindowTextInput(ISDLWindow window)
         {
@@ -17,12 +23,13 @@ namespace osu.Framework.Input
 
         private void handleTextInput(string text)
         {
-            // SDL sends IME results as `SDL_TextInputEvent` which we can't differentiate from regular text input
-            // so we have to manually keep track and invoke the correct event.
-
-            if (ImeActive)
+            Logger.Log($"[IME] handleTextInput: '{text}', hadActiveComposition={hadActiveComposition}");
+            
+            if (hadActiveComposition || pendingEmptyEditing)
             {
-                TriggerImeResult(text);
+                pendingEmptyEditing = false;
+                hadActiveComposition = false;
+                pendingTextInput = () => TriggerImeResult(text);
             }
             else
             {
@@ -34,7 +41,53 @@ namespace osu.Framework.Input
         {
             if (text == null) return;
 
-            TriggerImeComposition(text, selectionStart, selectionLength);
+            if (!string.IsNullOrEmpty(text))
+            {
+                // A new composition has started.
+                if (pendingEmptyEditing)
+                {
+                    // Next composition arrived without a TextInput event,
+                    // meaning the previous character was committed without going through the pending path.
+                    pendingEmptyEditing = false;
+                    hadActiveComposition = false;
+                }
+                
+                if (pendingTextInput != null)
+                {
+                    // Flush the previous pending commit before starting a new composition.
+                    Logger.Log($"[IME] Invoking pendingTextInput before new composition");
+                    pendingTextInput.Invoke();
+                    pendingTextInput = null;
+                }
+                
+                hadActiveComposition = true;
+                TriggerImeComposition(text, selectionStart, selectionLength);
+            }
+            else
+            {
+                // Empty TextEditing received.
+                if (pendingTextInput != null)
+                {
+                    // Normal path: TextInput arrived before TextEditing(""), flush it now.
+                    Logger.Log($"[IME] Invoking pendingTextInput");
+                    pendingTextInput.Invoke();
+                    pendingTextInput = null;
+                    hadActiveComposition = false;
+                    TriggerImeComposition(text, selectionStart, selectionLength);
+                }
+                else if (hadActiveComposition)
+                {
+                    // fcitx5 path: TextEditing("") arrives before TextInput.
+                    // Defer the empty composition event and wait for the TextInput to arrive.
+                    pendingEmptyEditing = true;
+                    // Do not call TriggerImeComposition here — wait for TextInput first.
+                }
+                else
+                {
+                    // Empty composition with no active composition = IME reset/initialisation event.
+                    TriggerImeComposition(text, selectionStart, selectionLength);
+                }
+            }
         }
 
         protected override void ActivateTextInput(TextInputProperties properties)
